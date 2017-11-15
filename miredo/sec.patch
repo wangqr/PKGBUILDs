@@ -1,0 +1,14 @@
+--- a/miredo-1.2.6/libteredo/security.c
++++ b/miredo-1.2.6/libteredo/security.c
+@@ -225,10 +225,7 @@
+ 
+ uint16_t teredo_get_flbits (uint32_t timestamp)
+ {
+-	uint8_t buf[LIBTEREDO_HASH_LEN];
+-
+-	teredo_hash (NULL, 0, NULL, 0, buf, timestamp);
+-	return (buf[0] << 8) | buf[1];
++	return 0;
+ }
+ 
+ #endif /* MIREDO_TEREDO_CLIENT */
