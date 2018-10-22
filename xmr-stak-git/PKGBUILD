@@ -1,5 +1,6 @@
+# Maintainer: Hui Yiqun(huiyiqun@gmail.com)
 pkgname=xmr-stak-git
-pkgver=r618.2ae7260
+pkgver=r1091.4e72408
 pkgrel=1
 pkgdesc="Unified All-in-one Monero miner"
 arch=('x86_64')
