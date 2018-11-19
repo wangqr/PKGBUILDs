@@ -1,0 +1,26 @@
+[Unit]
+Description=Unified all-in-one Monero miner
+After=network-online.target
+AssertFileNotEmpty=/etc/xmr-stak/config.txt
+
+[Service]
+ExecStart=/usr/bin/xmr-stak --cpu /etc/xmr-stak/cpu.txt -c /etc/xmr-stak/config.txt -C /etc/xmr-stak/pools.txt
+DynamicUser=true
+CPUSchedulingPolicy=idle
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+NoNewPrivileges=true
+CapabilityBoundingSet=
+MemoryDenyWriteExecute=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+PrivateUsers=true
+ConfigurationDirectory=xmr-stak
+
+[Install]
+WantedBy=multi-user.target
