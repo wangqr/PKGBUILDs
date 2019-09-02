@@ -28,6 +28,7 @@ depends=(
 makedepends=(
   autoconf-archive
   boost
+  cmake
   git
   intltool
   lua
