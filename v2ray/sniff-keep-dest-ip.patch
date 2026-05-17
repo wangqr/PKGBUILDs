@@ -1,0 +1,86 @@
+diff --git a/app/dispatcher/default.go b/app/dispatcher/default.go
+index 455588fa..29bc291d 100644
+--- a/app/dispatcher/default.go
++++ b/app/dispatcher/default.go
+@@ -216,7 +216,12 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
+ 		ctx = session.ContextWithContent(ctx, content)
+ 	}
+ 	sniffingRequest := content.SniffingRequest
+-	if !sniffingRequest.Enabled {
++	// Sniffing is only meaningful when the original destination is a literal
++	// IP address: protocols like TLS SNI or HTTP Host reveal the real domain
++	// that the IP stands for. If the destination is already a domain there is
++	// nothing to learn from sniffing, so skip it entirely and avoid pointlessly
++	// buffering the first payload bytes.
++	if !sniffingRequest.Enabled || !destination.Address.Family().IsIP() {
+ 		go d.routedDispatch(ctx, outbound, destination)
+ 	} else {
+ 		go func() {
+@@ -231,6 +236,10 @@ func (d *DefaultDispatcher) Dispatch(ctx context.Context, destination net.Destin
+ 			if err == nil && shouldOverride(result, sniffingRequest.OverrideDestinationForProtocol) {
+ 				if domain, err := strmatcher.ToDomain(result.Domain()); err == nil {
+ 					newError("sniffed domain: ", domain, " for ", destination).WriteToLog(session.ExportIDToError(ctx))
++					// Preserve the original IP destination so that routing
++					// decisions and the final dial can reuse it instead of
++					// resolving the sniffed domain again.
++					ob.OriginalTarget = destination
+ 					destination.Address = net.ParseAddress(domain)
+ 					ob.Target = destination
+ 				}
+diff --git a/common/session/session.go b/common/session/session.go
+index 0c4f1fd9..15b0eb51 100644
+--- a/common/session/session.go
++++ b/common/session/session.go
+@@ -49,6 +49,12 @@ type Inbound struct {
+ type Outbound struct {
+ 	// Target address of the outbound connection.
+ 	Target net.Destination
++	// OriginalTarget records the destination as it was before content sniffing
++	// rewrote Target with a sniffed domain (e.g. TLS SNI or HTTP Host). It is
++	// only populated when sniffing successfully overrode an IP destination, so
++	// that downstream routing and dialing can keep using the original IP
++	// instead of resolving the sniffed domain again.
++	OriginalTarget net.Destination
+ 	// Gateway address
+ 	Gateway net.Address
+ 	// Domain resolver to use when dialing
+diff --git a/features/routing/session/context.go b/features/routing/session/context.go
+index 8baf4baa..97c8e7a7 100644
+--- a/features/routing/session/context.go
++++ b/features/routing/session/context.go
+@@ -46,7 +46,18 @@ func (ctx *Context) GetSourcePort() net.Port {
+ 
+ // GetTargetIPs implements routing.Context.
+ func (ctx *Context) GetTargetIPs() []net.IP {
+-	if ctx.Outbound == nil || !ctx.Outbound.Target.IsValid() {
++	if ctx.Outbound == nil {
++		return nil
++	}
++
++	// If sniffing replaced the original IP destination with a domain, prefer
++	// the preserved original IP so that IP-based rules (e.g. GeoIP, CIDR) do
++	// not need to resolve the sniffed domain again.
++	if ctx.Outbound.OriginalTarget.IsValid() && ctx.Outbound.OriginalTarget.Address.Family().IsIP() {
++		return []net.IP{ctx.Outbound.OriginalTarget.Address.IP()}
++	}
++
++	if !ctx.Outbound.Target.IsValid() {
+ 		return nil
+ 	}
+ 
+diff --git a/proxy/freedom/freedom.go b/proxy/freedom/freedom.go
+index 2f70b733..f7af6e96 100644
+--- a/proxy/freedom/freedom.go
++++ b/proxy/freedom/freedom.go
+@@ -98,6 +98,11 @@ func (h *Handler) Process(ctx context.Context, link *transport.Link, dialer inte
+ 		return newError("target not specified.")
+ 	}
+ 	destination := outbound.Target
++	// If sniffing rewrote Target with a domain, keep using the original IP
++	// destination for dialing so we do not resolve the sniffed domain again.
++	if outbound.OriginalTarget.IsValid() && outbound.OriginalTarget.Address.Family().IsIP() {
++		destination.Address = outbound.OriginalTarget.Address
++	}
+ 	if h.config.DestinationOverride != nil {
+ 		server := h.config.DestinationOverride.Server
+ 		if isValidAddress(server.Address) {
