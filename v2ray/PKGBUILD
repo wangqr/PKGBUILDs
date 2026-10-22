@@ -2,8 +2,8 @@
 # Contributor: pandada8 <pandada8@gmail.com>
 
 pkgname=v2ray
-pkgver=5.48.0
-pkgrel=1
+pkgver=5.52.0
+pkgrel=2
 pkgdesc="A platform for building proxies to bypass network restrictions"
 arch=('x86_64')
 url="https://github.com/v2fly/v2ray-core"
@@ -13,29 +13,33 @@ makedepends=('go' 'git')
 backup=(etc/v2ray/config.json)
 source=("git+https://github.com/v2fly/v2ray-core.git#tag=v$pkgver"
         "sniff-keep-dest-ip.patch")
-sha512sums=('ae5d8822e0f249488f669cfde8bd89efece74d504688d812139adee5447748fcb5bd40cd517e0b3254f16f1ff92d8dc00390734e0d87ca37b0c12753301cb74e'
+sha512sums=('dd145d4556e16e557541e3726a57f903362a68ba8753bc16be3190e1bd0cb5711876a5b089cd700e7ec68f87072860d9a21dfa14802a1fc9188017b485fd743e'
             'SKIP')
 
 prepare() {
   cd v2ray-core
   sed -i 's|/usr/local/bin|/usr/bin|;s|/usr/local/etc|/etc|' release/config/systemd/system/*.service
+
+  export GOPATH="${srcdir}"
+  go mod download -modcacherw -x
+
   patch -p1 -i ../sniff-keep-dest-ip.patch
 }
 
 build() {
   cd v2ray-core
-  export GOFLAGS="-buildmode=pie -trimpath -ldflags=-linkmode=external"
+  export GOPATH="${srcdir}"
+  export GOFLAGS="-buildmode=pie -mod=readonly -modcacherw"
   export CGO_LDFLAGS="${LDFLAGS}"
   export CGO_CFLAGS="${CFLAGS}"
+  export CGO_CXXFLAGS="${CXXFLAGS}"
   export CGO_CPPFLAGS="${CPPFLAGS}"
-  go build -o v2ray ./main
+  go build -ldflags "-compressdwarf=false -linkmode external" -o v2ray ./main
 }
 
 check() {
   cd v2ray-core
-  # TestGeoIPMatcher6US: https://github.com/v2fly/v2ray-core/issues/3473
-  # QUIC tests: https://github.com/quic-go/quic-go/issues/5572
-  go test -p 1 -tags json -v -timeout 30m -skip 'TestGeoIPMatcher6US|TestQuic.*|TestVMessQuic|TestQUIC.*' ./...
+  go test -tags json -v -timeout 30m ./...
 }
 
 package() {
